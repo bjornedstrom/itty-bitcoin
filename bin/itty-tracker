@@ -1,0 +1,221 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+#
+# Copyright (c) 2011 Björn Edström <be@bjrn.se>
+#
+# Permission is hereby granted, free of charge, to any person
+# obtaining a copy of this software and associated documentation files
+# (the "Software"), to deal in the Software without restriction,
+# including without limitation the rights to use, copy, modify, merge,
+# publish, distribute, sublicense, and/or sell copies of the Software,
+# and to permit persons to whom the Software is furnished to do so,
+# subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be
+# included in all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+# MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+# NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
+# BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+# ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+# CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+import logging
+import optparse
+import random
+import re
+import sys
+
+try:
+    import irclib
+except ImportError:
+    print >> sys.stderr, 'This software requires Python irclib'
+    raise
+
+import itty.util.base58 as base58
+
+
+__version__ = '0.0.1'
+__author__ = u'Björn Edström <be@bjrn.se>'
+
+
+log = logging.getLogger(__name__)
+
+
+DEFAULT_NETWORK = 'irc.lfnet.org:6667'
+
+
+def name_to_ip(name):
+    """Transforms an IRC nickname to an ip:port pair.
+
+    ValueError on failure.
+    """
+
+    if not name.startswith('u'):
+        raise ValueError('not a valid name')
+
+    s = base58.b58decode_check(name[1:])
+    s = map(ord, s)
+
+    ip = '%d.%d.%d.%d' % (s[0], s[1], s[2], s[3])
+    port = s[4] << 8 | s[5]
+
+    return (ip, port)
+
+
+def ip_to_name(ip, port):
+    """Transforms ip and port to an IRC nickname parsable by the
+    BitCoin client.
+    """
+
+    ip_s = ''.join(map(lambda i: chr(int(i)), ip.split('.')))
+    port_s = chr(port >> 8) + chr(port & 0xff)
+
+    return 'u' + base58.b58encode_check(ip_s + port_s)
+
+
+class Shutdown(Exception):
+    pass
+
+
+class BitCoinPeerTracker(irclib.SimpleIRCClient):
+    """Gets BitCoin Peers from an IRC server.
+    """
+
+    RE_PEERCHANNEL = re.compile(r'#bitcoin\d\d')
+
+    def __init__(self, opts, current_nick):
+        irclib.SimpleIRCClient.__init__(self)
+        self.opts = opts
+        self.current_nick = current_nick
+        self.out = sys.stdout
+        if opts.output != '-':
+            self.out = file(opts.output, 'w')
+        self.channels = set()
+        self.peers = set()
+
+    def on_welcome(self, connection, event):
+        if self.opts.test:
+            channel = '#bitcoinTEST'
+        else:
+            channel = '#bitcoin%0d' % random.randint(0, 99)
+
+        log.debug('joining channel %s', channel)
+        connection.join(channel)
+
+        connection.list()
+
+    def on_list(self, connection, event):
+        args = event.arguments()
+        channel = args[0]
+        if self.RE_PEERCHANNEL.match(channel):
+            self.channels.add(channel)
+
+    def on_listend(self, connection, event):
+        log.debug('got channels from LIST: %s', ', '.join(self.channels))
+        channel = random.choice(list(self.channels))
+        log.debug('joining channel %s', channel)
+        connection.join(channel)
+
+    def on_join(self, connection, event):
+        log.debug('joined channel %s', event.target())
+        connection.who(event.target())
+
+    def on_whoreply(self, connection, event):
+        args = event.arguments()
+        try:
+            ip, port = name_to_ip(args[4])
+            self.peers.add((ip, port))
+            print >> self.out, '%s:%s' % (ip, port)
+        except:
+            pass
+
+    def on_endofwho(self, connection, event):
+        if len(self.peers) < self.opts.num:
+            log.debug('not enough peers, has %d want %d', len(self.peers), self.opts.num)
+            channel = random.choice(list(self.channels))
+            log.debug('joining channel %s', channel)
+            connection.join(channel)
+            return
+
+        log.debug('has peers %s', ', '.join(map(lambda s: '%s:%d' % s, self.peers)))
+
+        if not self.opts.daemon:
+            log.debug('shutting down')
+            self.out.close()
+            connection.close()
+            raise Shutdown()
+
+
+def simple_irc_daemon(opts):
+    network = opts.server.split(':')
+    host = network[0]
+    port = int(network[1])
+
+    if opts.announce:
+        nick = opts.announce
+    else:
+        nick = 'x%d' % (random.randint(0, 1000000000),)
+
+    log.debug('connecting to irc network %s with nick %s', opts.server, nick)
+
+    c = BitCoinPeerTracker(opts, nick)
+    try:
+        c.connect(host, port, nick)
+    except irclib.ServerConnectionError, x:
+        log.critical('failed to connect to irc network: %s', x)
+        sys.exit(1)
+    try:
+        c.start()
+    except Shutdown:
+        pass
+    except KeyboardInterrupt:
+        pass
+
+
+def verify_ip4_port(s):
+    try:
+        ip, port = s.split(':')
+        port = int(port)
+        assert 0 < port <= 65536
+        octets = map(int, ip.split('.'))
+        assert len(octets)  == 4
+        for o in octets:
+            assert 0 <= o <= 255
+        return (ip, port)
+    except:
+        raise ValueError('string not in form ip:port')
+
+
+def main():
+    parser = optparse.OptionParser(description='manage seed peers in the bitcoin network')
+    parser.add_option('-d', '--daemon', action='store_true', default=False, help='run as daemon')
+    parser.add_option('-a', '--announce', metavar='IP:PORT', help='announce IP and PORT as connectable')
+    parser.add_option('-o', '--output',  default='-', metavar='FILE', help='store output to FILE')
+    parser.add_option('-s', '--server', default=DEFAULT_NETWORK, metavar='IRCHOST', help='get peers from irc network [%default]')
+    parser.add_option('-t', '--test', action='store_true', default=False, help='for testing')
+    parser.add_option('-N', '--num', default=1, type='int', help='minimum number of peers returned [%default]')
+    parser.add_option('-v', '--verbose', action='store_true', default=False, dest='verbose', help='be verbose')
+    opts, args = parser.parse_args()
+
+    logging.basicConfig(format='%(message)s', stream=sys.stderr)
+
+    if opts.verbose:
+        logging.getLogger().setLevel(logging.DEBUG)
+    else:
+        logging.getLogger().setLevel(logging.INFO)
+
+    if opts.announce:
+        try:
+            opts.announce = verify_ip4_port(opts.announce)
+        except ValueError:
+            parser.error('announce must be valid IP:PORT')
+
+    simple_irc_daemon(opts)
+
+
+if __name__ == '__main__':
+    main()
