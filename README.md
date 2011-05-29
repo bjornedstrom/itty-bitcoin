@@ -15,3 +15,4 @@ Modules
 
 `itty.util.base58`: Reference implementation of the base58 encoding
 used by BitCoin. Extensively tested.
+`itty.crypto.ecc`: Elliptic curve cryptography.
