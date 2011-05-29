@@ -39,7 +39,7 @@ import itty.util.base58 as base58
 
 
 __version__ = '0.0.1'
-__author__ = u'Björn Edström <be@bjrn.se>'
+__author__ = 'Bjorn Edstrom <be@bjrn.se>'
 
 
 log = logging.getLogger(__name__)

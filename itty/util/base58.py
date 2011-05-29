@@ -28,7 +28,7 @@ import hashlib
 
 
 __version__ = '0.0.1'
-__author__ = u'Björn Edström <be@bjrn.se>'
+__author__ = 'Bjorn Edstrom <be@bjrn.se>'
 
 
 __b58chars = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
