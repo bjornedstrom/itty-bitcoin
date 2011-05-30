@@ -23,6 +23,7 @@
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import hashlib
 import struct
 
 __version__ = '0.0.1'
@@ -193,9 +194,15 @@ class Message(object):
         name = ctx.char(12)
         name = name.strip('\x00')
         length = ctx.uint32_t()
+        checksum = None
         if name not in ('version', 'verack'):
-            checksum = ctx.uint32_t()
+            checksum = ctx.char(4)
         payload = ctx.char(length)
+
+        if checksum is not None:
+            H = lambda s: hashlib.sha256(s).digest()
+            if checksum != H(H(payload))[:4]:
+                raise ValueError('checksum failure')
 
         #print repr(magic)
         #print repr(name)
@@ -233,7 +240,8 @@ class Message(object):
         ctx.uint32_t(len(payload))
 
         if self.name not in ('version', 'verack'):
-            ctx.uint32_t(0) # TODO: Checksum
+            H = lambda s: hashlib.sha256(s).digest()
+            ctx.char(H(H(payload))[:4]) # TODO: Checksum
 
         ctx.char(payload)
 
