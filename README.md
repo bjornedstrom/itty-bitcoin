@@ -17,3 +17,5 @@ Modules
 used by BitCoin. Extensively tested.
 
 `itty.crypto.ecc`: Elliptic curve cryptography.
+
+`itty.bitcoin.messages`: Reads/writes BitCoin protocol messages.
