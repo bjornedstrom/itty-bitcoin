@@ -30,6 +30,10 @@ __version__ = '0.0.1'
 __author__ = 'Bjorn Edstrom <be@bjrn.se>'
 
 
+class NeedMoreData(Exception):
+    pass
+
+
 class Stream(object):
     """Simple class that represents an unending stream of bytes.
     """
@@ -56,6 +60,8 @@ class StreamReader(object):
 
     def _buf(self, n):
         data = self.stream.buf[self.n:self.n+n]
+        if len(data) != n:
+            raise NeedMoreData()
         self.n += n
         return data
 
@@ -65,13 +71,22 @@ class StreamReader(object):
     # TODO: Handle failure (even if below doesn't parse, we still
     # advance the pointer)
     def uint16_t(self):
-        return struct.unpack('<H', self._buf(2))[0]
+        try:
+            return struct.unpack('<H', self._buf(2))[0]
+        except struct.error:
+            raise NeedMoreData()
 
     def uint32_t(self):
-        return struct.unpack('<L', self._buf(4))[0]
+        try:
+            return struct.unpack('<L', self._buf(4))[0]
+        except struct.error:
+            raise NeedMoreData()
 
     def uint64_t(self):
-        return struct.unpack('<Q', self._buf(8))[0]
+        try:
+            return struct.unpack('<Q', self._buf(8))[0]
+        except struct.error:
+            raise NeedMoreData()
 
     def var_int(self):
         pre = ord(self.stream.buf[self.n:self.n+1])
@@ -383,3 +398,18 @@ if __name__ == '__main__':
     a2.test = True
 
     assert a2.pack() == a.pack()
+
+
+    # Test broken
+
+    s = s0 + s1 + s2
+
+    for i in range(len(s)):
+        for j in range(i, len(s)):
+            stream = Stream(s[i:j])
+            try:
+                msg = Message.parse(stream)
+            except NeedMoreData:
+                pass
+            except AssertionError:
+                pass
