@@ -392,9 +392,9 @@ class InvMessage(Message):
         msg = InvMessage()
 
         msg.count = ctx.var_int()
-        msg.inv = []
+        msg.inventory = []
         for i in range(msg.count):
-            msg.inv.append(ctx.inv_vect())
+            msg.inventory.append(ctx.inv_vect())
 
         return msg
 
@@ -403,14 +403,14 @@ class InvMessage(Message):
         ctx = StreamWriter(stream)
 
         ctx.var_int(self.count)
-        for inv_vect in self.inv:
+        for inv_vect in self.inventory:
             ctx.inv_vect(inv_vect)
         ctx.commit()
 
         return stream.buf
 
     def __repr__(self):
-        return '<InvMessage count=%d inv=%r>' % (self.count, self.inv)
+        return '<InvMessage count=%d inventory=%r>' % (self.count, self.inventory)
 
 
 # Mapping from message name to classes.
@@ -470,7 +470,7 @@ if __name__ == '__main__':
     # inv
     inv = InvMessage(test=True)
     inv.count = 2
-    inv.inv = [('tx', 'a'*32), ('block', 'b'*32)]
+    inv.inventory = [('tx', 'a'*32), ('block', 'b'*32)]
     a3 = Message.parse(Stream(inv.pack()))
     a3.test = True
 
