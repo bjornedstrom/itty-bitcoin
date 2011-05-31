@@ -311,10 +311,46 @@ class VerAckMessage(Message):
         return '<VerAckMessage>'
 
 
+class AddrMessage(Message):
+    def __init__(self, *args, **kwargs):
+        Message.__init__(self, 'addr', *args, **kwargs)
+
+    @staticmethod
+    def parse(stream):
+        ctx = StreamReader(stream)
+
+        msg = AddrMessage()
+
+        msg.count = ctx.var_int()
+        msg.addr_list = []
+        for i in range(msg.count):
+            timestamp = ctx.uint32_t()
+            addr = ctx.net_addr()
+            msg.addr_list.append((timestamp, addr))
+
+        return msg
+
+    def payload(self):
+        stream = Stream()
+        ctx = StreamWriter(stream)
+
+        ctx.var_int(self.count) # TODO: Use len(addr_list)..
+        for timestamp, addr in self.addr_list:
+            ctx.uint32_t(timestamp)
+            ctx.net_addr(addr)
+        ctx.commit()
+
+        return stream.buf
+
+    def __repr__(self):
+        return '<AddrMessage count=%d addr_list=%r>' % (msg.count, msg.addr_list)
+
+
 # Mapping from message name to classes.
 MESSAGES = {
     'version': VersionMessage,
     'verack': VerAckMessage,
+    'addr': AddrMessage,
 }
 
 
@@ -324,13 +360,26 @@ if __name__ == '__main__':
     # Some test messages...
     s0 = '\xfa\xbf\xb5\xdaversion\x00\x00\x00\x00\x00U\x00\x00\x00d}\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\xc6\xe4\xe3M\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xffYYYY\xa2\x82\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xffX\xbe\xbe\xbeG\x9d\xb7\xf0i\xbc\x14\xb2\x816\x00\xf5V\x00\x00'
     s1 = '\xfa\xbf\xb5\xdaverack\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+    s2 = '\xfa\xbf\xb5\xdaaddr\x00\x00\x00\x00\x00\x00\x00\x00\x1f\x00\x00\x00\xedR9\x9b\x01\xe2\x15\x10M\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff\n\x00\x00\x01 \x8d'
 
-    stream = Stream(s0 + s1)
+    stream = Stream(s0 + s1 + s2)
 
     msg1 = Message.parse(stream)
     msg2 = Message.parse(stream)
+    msg3 = Message.parse(stream)
 
     msg1.test = True
     assert msg1.pack() == s0
     msg2.test = True
     assert msg2.pack() == s1
+    msg3.test = True
+    assert msg3.pack() == s2
+
+    a = AddrMessage(test=True)
+    a.count = 2
+    a.addr_list = [(12345, ('127.0.0.1', 8333)), (67890, ('60.84.123.127', 40945))]
+
+    a2 = Message.parse(Stream(a.pack()))
+    a2.test = True
+
+    assert a2.pack() == a.pack()
