@@ -413,12 +413,45 @@ class InvMessage(Message):
         return '<InvMessage count=%d inventory=%r>' % (self.count, self.inventory)
 
 
+class GetDataMessage(Message):
+    def __init__(self, *args, **kwargs):
+        Message.__init__(self, 'getdata', *args, **kwargs)
+
+    @staticmethod
+    def parse(stream):
+        ctx = StreamReader(stream)
+
+        msg = GetDataMessage()
+
+        msg.count = ctx.var_int()
+        msg.inventory = []
+        for i in range(msg.count):
+            msg.inventory.append(ctx.inv_vect())
+
+        return msg
+
+    def payload(self):
+        stream = Stream()
+        ctx = StreamWriter(stream)
+
+        ctx.var_int(self.count)
+        for inv_vect in self.inventory:
+            ctx.inv_vect(inv_vect)
+        ctx.commit()
+
+        return stream.buf
+
+    def __repr__(self):
+        return '<GetDataMessage count=%d inventory=%r>' % (self.count, self.inventory)
+
+
 # Mapping from message name to classes.
 MESSAGES = {
     'version': VersionMessage,
     'verack': VerAckMessage,
     'addr': AddrMessage,
     'inv': InvMessage,
+    'getdata': GetDataMessage,
 }
 
 
