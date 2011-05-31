@@ -111,6 +111,15 @@ class StreamReader(object):
         ip = '%d.%d.%d.%d' % tuple(map(ord, ipv4))
         return (ip, port)
 
+    def inv_vect(self):
+        type = self.uint32_t()
+        hash = self.char(32)
+        types = {
+            1: 'tx',
+            2: 'block',
+            }
+        return types.get(type), hash
+
     def string(self):
         return self.char(self.var_int())
 
@@ -169,6 +178,17 @@ class StreamWriter(object):
         for i in range(4):
             self.uint8_t(octets[i])
         self.uint16_t(port)
+
+    def inv_vect(self, inv_vect):
+        type, hash = inv_vect
+        assert type in ('tx', 'block')
+        assert len(hash) == 32
+        types = {
+            'tx': 1,
+            'block': 2,
+            }
+        self.uint32_t(types[type])
+        self.char(hash)
 
     def string(self, s):
         self.var_int(len(s))
@@ -361,11 +381,44 @@ class AddrMessage(Message):
         return '<AddrMessage count=%d addr_list=%r>' % (msg.count, msg.addr_list)
 
 
+class InvMessage(Message):
+    def __init__(self, *args, **kwargs):
+        Message.__init__(self, 'inv', *args, **kwargs)
+
+    @staticmethod
+    def parse(stream):
+        ctx = StreamReader(stream)
+
+        msg = InvMessage()
+
+        msg.count = ctx.var_int()
+        msg.inv = []
+        for i in range(msg.count):
+            msg.inv.append(ctx.inv_vect())
+
+        return msg
+
+    def payload(self):
+        stream = Stream()
+        ctx = StreamWriter(stream)
+
+        ctx.var_int(self.count)
+        for inv_vect in self.inv:
+            ctx.inv_vect(inv_vect)
+        ctx.commit()
+
+        return stream.buf
+
+    def __repr__(self):
+        return '<InvMessage count=%d inv=%r>' % (self.count, self.inv)
+
+
 # Mapping from message name to classes.
 MESSAGES = {
     'version': VersionMessage,
     'verack': VerAckMessage,
     'addr': AddrMessage,
+    'inv': InvMessage,
 }
 
 
@@ -413,3 +466,12 @@ if __name__ == '__main__':
                 pass
             except AssertionError:
                 pass
+
+    # inv
+    inv = InvMessage(test=True)
+    inv.count = 2
+    inv.inv = [('tx', 'a'*32), ('block', 'b'*32)]
+    a3 = Message.parse(Stream(inv.pack()))
+    a3.test = True
+
+    assert a3.pack() == inv.pack()
