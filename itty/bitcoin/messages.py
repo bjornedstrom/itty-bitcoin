@@ -445,6 +445,54 @@ class GetDataMessage(Message):
         return '<GetDataMessage count=%d inventory=%r>' % (self.count, self.inventory)
 
 
+class TxMessage(Message):
+    def __init__(self, *args, **kwargs):
+        Message.__init__(self, 'tx', *args, **kwargs)
+
+    @staticmethod
+    def parse(stream):
+        ctx = StreamReader(stream)
+
+        msg = TxMessage()
+
+        msg.version = ctx.uint32_t()
+        msg.tx_in_count = ctx.var_int()
+        msg.tx_in = []
+        for i in range(msg.tx_in_count):
+            tx_in = {}
+
+            outpoint_hash = ctx.char(32)
+            outpoint_index = ctx.uint32_t()
+
+            tx_in['previous_output'] = (outpoint_hash, outpoint_index)
+
+            script_length = ctx.var_int()
+            script = ctx.char(script_length)
+
+            tx_in['script'] = script
+            tx_in['sequence'] = ctx.uint32_t()
+
+            msg.tx_in.append(tx_in)
+        msg.tx_out_count = ctx.var_int()
+        msg.tx_out = []
+        for i in range(msg.tx_out_count):
+            value = ctx.uint64_t()
+            pk_script_length = ctx.var_int()
+            pk_script = ctx.char(pk_script_length)
+            msg.tx_out.append({
+                    'value': value,
+                    'pk_script': pk_script,
+                    })
+        msg.lock_time = ctx.uint32_t()
+
+        ctx.commit()
+
+        return msg
+
+    def __repr__(self):
+        return '<TxMessage version=%d tx_in_count=%r tx_in=%r tx_out_count=%d tx_out=%r lock_time=%r>' % (self.version, self.tx_in_count, self.tx_in, self.tx_out_count, self.tx_out, self.lock_time)
+
+
 # Mapping from message name to classes.
 MESSAGES = {
     'version': VersionMessage,
@@ -452,6 +500,7 @@ MESSAGES = {
     'addr': AddrMessage,
     'inv': InvMessage,
     'getdata': GetDataMessage,
+    'tx': TxMessage,
 }
 
 
