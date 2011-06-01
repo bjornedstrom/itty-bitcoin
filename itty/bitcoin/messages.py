@@ -378,7 +378,7 @@ class AddrMessage(Message):
         return stream.buf
 
     def __repr__(self):
-        return '<AddrMessage count=%d addr_list=%r>' % (msg.count, msg.addr_list)
+        return '<AddrMessage count=%d addr_list=%r>' % (self.count, self.addr_list)
 
 
 class InvMessage(Message):
